@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -28,10 +29,59 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
-	// TODO: implement the upload here
+	// Parse the multipart form containing the thumbnail file
+	const maxMemory = 10 << 20 // 10 MB
+	err = r.ParseMultipartForm(maxMemory)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to parse form file", err)
+		return
+	}
+	// Get the thumbnail file from the form
+	file, header, err := r.FormFile("thumbnail")
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to get form file", err)
+		return
+	}
+	defer file.Close()
 
-	respondWithJSON(w, http.StatusOK, struct{}{})
+	// Read the thumbnail file into memory
+	imgData, err := io.ReadAll(file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to read form file", err)
+		return
+	}
+
+	// Get the video from the database
+	video, err := cfg.db.GetVideo(videoID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to get video", err)
+		return
+	}
+
+	// Check if the user is the owner of the video
+	if video.UserID != userID {
+		respondWithError(w, http.StatusUnauthorized, "You are not allowed to upload thumbnail for this video", nil)
+		return
+	}
+
+	// Store the thumbnail in memory
+	videoThumbnails[videoID] = thumbnail{
+		data:      imgData,
+		mediaType: header.Header.Get("Content-Type"),
+	}
+
+	// Update the video's thumbnail URL
+	thumbnailURL := fmt.Sprintf("http://localhost:%s/api/thumbnails/%s", cfg.port, videoID)
+	video.ThumbnailURL = &thumbnailURL
+
+	// Update the video in the database
+	err = cfg.db.UpdateVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to update video", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, video)
 }
