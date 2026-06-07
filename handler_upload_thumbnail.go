@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 
@@ -30,8 +31,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
-
 	// Parse the multipart form containing the thumbnail file
 	const maxMemory = 10 << 20 // 10 MB
 	err = r.ParseMultipartForm(maxMemory)
@@ -54,8 +53,19 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	mediaType, _, err = mime.ParseMediaType(mediaType)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid Content-Type for thumbnail", err)
+		return
+	}
+
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Unsupported Content-Type for thumbnail", nil)
+		return
+	}
+
 	// Save the imgData to a file path (/assets/<videoID>.<file_extension>)
-	assetPath := getAssetPath(videoID, mediaType)
+	assetPath := getAssetPath(mediaType)
 	assetDiskPath := cfg.getAssetDiskPath(assetPath)
 
 	newVideoFile, err := os.Create(assetDiskPath)
@@ -83,6 +93,8 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "You are not allowed to upload thumbnail for this video", nil)
 		return
 	}
+
+	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	// Update the video's thumbnail URL to "http://localhost:<port>/assets/<videoID>.<file_extension>"
 	thumbnailURL := cfg.getAssetURL(assetPath)
