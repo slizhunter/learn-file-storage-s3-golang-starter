@@ -17,11 +17,11 @@ func (cfg apiConfig) ensureAssetsDir() error {
 }
 
 func getAssetPath(mediaType string) string {
-	ts := make([]byte, 32)
-	rand.Read(ts)
-	thumbnailStr := base64.RawURLEncoding.EncodeToString(ts)
+	base := make([]byte, 32)
+	rand.Read(base)
+	rawStr := base64.RawURLEncoding.EncodeToString(base)
 	ext := mediaTypeToExt(mediaType)
-	return fmt.Sprintf("%s%s", thumbnailStr, ext)
+	return fmt.Sprintf("%s%s", rawStr, ext)
 }
 
 func (cfg apiConfig) getAssetDiskPath(assetPath string) string {
