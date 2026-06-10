@@ -11,13 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/google/uuid"
 )
 
@@ -151,7 +148,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Set video URL to S3 URL
-	videoURL := cfg.s3Bucket + "," + key
+	videoURL := fmt.Sprintf("%s/%s", cfg.s3CfDistribution, key)
 	video.VideoURL = &videoURL
 
 	// Update the video in the database
@@ -160,31 +157,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	video, err = cfg.dbVideoToSignedVideo(video)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Failed to generate signed URL", err)
-		return
-	}
-
 	respondWithJSON(w, http.StatusOK, video)
-}
-
-func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
-	if video.VideoURL == nil {
-		return video, nil
-	}
-	splitURL := strings.Split(*video.VideoURL, ",")
-	if len(splitURL) < 2 {
-		return video, nil
-	}
-	bucket := splitURL[0]
-	key := splitURL[1]
-	signedURL, err := generatePresignedURL(cfg.s3Client, bucket, key, 5*time.Minute)
-	if err != nil {
-		return video, fmt.Errorf("failed to generate presigned URL: %v", err)
-	}
-	video.VideoURL = &signedURL
-	return video, nil
 }
 
 func getVideoAspectRatio(filePath string) (string, error) {
@@ -241,16 +214,4 @@ func processVideoForFastStart(filePath string) (string, error) {
 		return "", fmt.Errorf("error processing video for fast start: %s: %v", stderr.String(), err)
 	}
 	return outputFilePath, nil
-}
-
-func generatePresignedURL(s3Client *s3.Client, bucket, key string, expiration time.Duration) (string, error) {
-	presignClient := s3.NewPresignClient(s3Client)
-	request, err := presignClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	}, s3.WithPresignExpires(expiration))
-	if err != nil {
-		return "", fmt.Errorf("failed to generate presigned URL: %v", err)
-	}
-	return request.URL, nil
 }
